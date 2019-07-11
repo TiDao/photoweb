@@ -11,35 +11,64 @@ import(
     "net/http"
     "os"
     "io/ioutil"
+    "html/template"
+    "path"
 )
 
 const (
     UPLOAD_DIR = "./uploads"
+    TEMPLATE_DIR = "./view"
 )
+
+
+//var templates map[string]*template.Template = make(map[string]*template.Template)
+
+var templates = make(map[string]*template.Template)
+func init(){
+    fileInfoArr,err := ioutil.ReadDir(TEMPLATE_DIR)
+    if err != nil{
+        panic(err)
+        return
+    }
+    var templateName,templatePath string
+    for _,fileInfo := range fileInfoArr{
+        templateName = fileInfo.Name()
+        if ext := path.Ext(templateName); ext != ".html"{
+            continue
+        }
+        templatePath = TEMPLATE_DIR+"/"+templateName
+        t := template.Must(template.ParseFiles(templatePath)) 
+        templates[templateName] = t
+        log.Println("loading template:",templatePath)
+    }
+}
+
+func renderHtml(w http.ResponseWriter,templateName string,locals map[string]interface{})  error{
+    err := templates[templateName].Execute(w,locals)
+    return err
+}
+
+func check(err error){
+    if err != nil{
+        panic(err)
+    }
+}
 
 func uploadHandler(w http.ResponseWriter,r *http.Request){
     if r.Method == "GET"{
-        io.WriteString(w,"<form method=\"POST\" action=\"/upload\" "+" enctype=\"multipart/form-data\">"+"Choose an image to upload: <input name=\"image\" type=\"file\" />"+"<input type=\"submit\" value=\"Upload\" />"+"</form>")
-        return
+        err := renderHtml(w,"upload.html",nil)
+        check(err)
     }
     if r.Method == "POST"{
         f,h,err := r.FormFile("image")
-        if err != nil{
-            http.Error(w,err.Error(),http.StatusInternalServerError)
-            return
-        }
+        check(err)
         filename := h.Filename
         defer f.Close()
         t,err := os.Create(UPLOAD_DIR + "/"+filename)
-        if err != nil{
-            http.Error(w,err.Error(),http.StatusInternalServerError)
-            return
-        }
+        check(err)
         defer t.Close()
-        if _,err := io.Copy(t,f); err != nil{
-            http.Error(w,err.Error(),http.StatusInternalServerError)
-            return
-        }
+        _,err = io.Copy(t,f)
+        check(err)
         http.Redirect(w,r,"/view?id="+filename,http.StatusFound)
     }
 }
@@ -66,23 +95,34 @@ func isExists(path string) bool{
 
 func listHandler(w http.ResponseWriter,r *http.Request){
     fileInfoArr,err := ioutil.ReadDir("./uploads")
-    if err != nil{
-        http.Error(w,err.Error(),http.StatusInternalServerError)
-        return
-    }
-    var listhtml string
+    check(err)
+    locals := make(map[string]interface{})
+    images := []string{}
     for _,fileInfo := range fileInfoArr{
-        imgId := fileInfo.Name()
-        strings := "<li><a href=\"/view?id="+string(imgId)+"\">imgid</a></li>"
-        listhtml += strings
+        images = append(images,fileInfo.Name())
     }
-    io.WriteString(w,"<ol>"+listhtml+"</ol>")
+    locals["images"] = images
+    err  = renderHtml(w,"list.html",locals)
+    check(err)
+}
+
+
+func safeHandler(fn http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter,r *http.Request){
+        defer func(){
+            if err,ok:= recover().(error); ok{
+                http.Error(w,err.Error(),http.StatusInternalServerError)
+                log.Println("warning:panic in %v - %v",fn,err)
+            }
+        }()
+        fn(w,r)
+    }
 }
 
 func main(){
-    http.HandleFunc("/",listHandler)
-    http.HandleFunc("/view",viewHandler)
-    http.HandleFunc("/upload",uploadHandler)
+    http.HandleFunc("/",safeHandler(listHandler))
+    http.HandleFunc("/view",safeHandler(viewHandler))
+    http.HandleFunc("/upload",safeHandler(uploadHandler))
     err := http.ListenAndServe(":8000",nil)
     if err != nil{
         log.Fatal("ListenAndServe: ",err.Error())
