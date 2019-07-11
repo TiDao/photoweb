@@ -18,12 +18,14 @@ import(
 const (
     UPLOAD_DIR = "./uploads"
     TEMPLATE_DIR = "./view"
+    ListDir = 0x0001
 )
 
 
 //var templates map[string]*template.Template = make(map[string]*template.Template)
 
 var templates = make(map[string]*template.Template)
+
 func init(){
     fileInfoArr,err := ioutil.ReadDir(TEMPLATE_DIR)
     if err != nil{
@@ -119,7 +121,22 @@ func safeHandler(fn http.HandlerFunc) http.HandlerFunc {
     }
 }
 
+//func staticDirHandlerFunc(mux *http.ServeMux,prefix string,staticDir string,flags int) {
+//    mux.HandleFunc(prefix,func(w http.ResponseWriter,r *http.Request){
+//        file := staticDir + r.URL.Path[len(prefix)-1:]
+//        if (flags & ListDir) == 0{
+//            if exist := isExists(file);!exist{
+//                http.NotFound(w,r)
+//                return
+//            }
+//        }
+//        http.ServeFile(w,r,file)
+//    })
+//}
+
 func main(){
+//    mux := http.NewServeMux()
+//    staticDirHandlerFunc(mux,"/assets/","./public/",0)
     http.HandleFunc("/",safeHandler(listHandler))
     http.HandleFunc("/view",safeHandler(viewHandler))
     http.HandleFunc("/upload",safeHandler(uploadHandler))
